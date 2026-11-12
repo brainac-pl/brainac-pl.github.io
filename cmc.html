@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Analiza historii transakcji</title>
+<style>
+:root{--bg:#f6f7f9;--sf:#fff;--tx:#1b2430;--mu:#6b7686;--bd:#dde1e7;--ac:#1f5fbf;--up:#13795b;--dn:#b3302a;--hd:#eef1f5}
+@media(prefers-color-scheme:dark){:root{--bg:#14181e;--sf:#1c222b;--tx:#e4e8ee;--mu:#93a0b2;--bd:#2e3744;--ac:#6ea3f0;--up:#4cc79f;--dn:#f08a84;--hd:#232b36}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.4 system-ui,"Segoe UI",sans-serif}
+header{padding:14px 20px;background:var(--sf);border-bottom:1px solid var(--bd);display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+h1{font-size:17px;margin:0;font-weight:650}main{padding:16px 20px;max-width:1500px;margin:auto}
+.drop{border:2px dashed var(--bd);border-radius:8px;padding:34px;text-align:center;color:var(--mu);background:var(--sf)}
+.drop.on{border-color:var(--ac)}button,select,input{font:inherit;color:var(--tx);background:var(--sf);border:1px solid var(--bd);border-radius:6px;padding:5px 9px}
+button{cursor:pointer}button:hover{border-color:var(--ac)}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--ac)}
+.bar{display:flex;flex-wrap:wrap;gap:12px 18px;background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:12px}
+.bar label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mu)}
+.pre{display:flex;gap:4px;align-items:flex-end}.pre button{padding:5px 8px;font-size:12px}
+details{position:relative}summary{cursor:pointer;border:1px solid var(--bd);border-radius:6px;padding:5px 9px;background:var(--sf);color:var(--tx);list-style:none;white-space:nowrap}
+details[open] .dd{position:absolute;z-index:5;top:34px;left:0;min-width:230px;max-height:300px;overflow:auto;background:var(--sf);border:1px solid var(--bd);border-radius:6px;padding:6px;box-shadow:0 6px 20px #0003}
+.dd label{flex-direction:row;align-items:center;gap:6px;color:var(--tx);font-size:13px;padding:2px 3px}.dd .a{display:flex;gap:6px;padding-bottom:4px}
+.kpi{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}.kpi div{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:9px 14px;min-width:150px}
+.kpi small{color:var(--mu);display:block}.kpi b{font-size:19px;font-variant-numeric:tabular-nums}
+.wrap{overflow:auto;background:var(--sf);border:1px solid var(--bd);border-radius:8px;max-height:62vh}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{padding:5px 10px;border-bottom:1px solid var(--bd);text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:var(--hd);cursor:pointer;z-index:2}th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:inherit}
+td:first-child{background:var(--sf)}tr.g td{background:var(--hd);font-weight:600}tr.t td{font-weight:700;border-top:2px solid var(--bd);background:var(--hd)}
+td.c{cursor:pointer}td.c:hover{outline:1px solid var(--ac)}.p{color:var(--up)}.n{color:var(--dn)}.mu{color:var(--mu)}
+#det{margin-top:14px}#st{color:var(--mu);margin:8px 0}.hide{display:none}h2{font-size:14px;margin:14px 0 6px}
+</style></head><body>
+<header><h1>Analiza historii transakcji</h1><span class="mu">Dane zostają w przeglądarce, nic nie jest wysyłane</span><span style="flex:1"></span><button id="re" class="hide">Wczytaj inny plik</button></header>
+<main>
+<div id="dz" class="drop"><p><b>Przeciągnij tu plik Historia.csv</b> albo</p><input type="file" id="fi" accept=".csv,text/csv"></div>
+<div id="app" class="hide">
+<div id="st"></div>
+<div class="bar">
+<label>Daty według<select id="basis"><option value="d">zdarzenia (zamknięcia/kosztu)</option><option value="od">otwarcia pozycji</option></select></label>
+<label>Od<input type="date" id="df"></label><label>Do<input type="date" id="dt"></label>
+<div class="pre"><button data-p="all">Całość</button><button data-p="ytd">Ten rok</button><button data-p="m">Ten miesiąc</button><button data-p="90">90 dni</button><button data-p="30">30 dni</button><button data-p="7">7 dni</button></div>
+<label>Wiersze<select id="r1"></select></label><label>Podgrupa<select id="r2"></select></label><label>Kolumny<select id="c1"></select></label>
+<label>Wartość<select id="mv"></select></label>
+<div id="fl" style="display:flex;gap:8px;align-items:flex-end"></div>
+<div class="pre"><button id="ex">Eksport pivotu CSV</button></div>
+</div>
+<div class="kpi" id="kpi"></div>
+<div class="wrap"><table id="pv"></table></div>
+<div id="det" class="hide"><h2 id="dh"></h2><div class="wrap"><table id="dt2"></table></div></div>
+</div></main>
+<script>
+const MON={sty:1,luty:2,lut:2,mar:3,kw:4,maj:5,cze:6,lip:7,sie:8,wrz:9,paz:10,"paź":10,list:11,gru:12};
+const ST=s=>s.trim(),NUM=s=>{s=(s||"").replace(/[\s\u00a0]/g,"").replace(",",".").replace("%","");const v=parseFloat(s);return isNaN(v)?0:v};
+const isOpen=t=>/^Transakcja\s.*(Kupna|Sprzedaży)$/.test(t);
+const KNOWN=/^(Zlecenie|Zmodyfikowano|Anulowano|Aktywowano|Zablokowano|Wpłata|Wypłata|Modyfikowano|Koszty Utrzymania|Opłata prowizyjna|Rolowanie|Netting|Rozliczenie Gotówkowe|Dopasowanie Cen|Zamknięcie Transakcji|Take Profit|Stop Loss|Transakcja\s)/;
+const CLOSE={"Zamknięcie Transakcji":"Zamknięcie","Take Profit":"Take Profit","Stop Loss":"Stop Loss","Rolowanie - Zamknięcie":"Rolowanie","Rozliczenie Gotówkowe":"Rozliczenie gotówkowe"};
+const DIMS={base:"Instrument bazowy",contract:"Kontrakt",dir:"Kierunek",typ:"Typ zdarzenia",root:"Zlecenie pierwotne",year:"Rok",month:"Miesiąc",week:"Tydzień",day:"Dzień",rolls:"Liczba rolowań"};
+const MEAS={wynik:"Wynik zrealizowany (PLN)",koszt:"Koszty utrzymania i prowizje (PLN)",net:"Wynik netto (PLN)",n:"Liczba zdarzeń",pos:"Liczba pozycji",units:"Jednostki zamknięte"};
+const FILT=["base","contract","dir","typ"];
+let EV=[],SEL={},SORT=null,LASTV=[];
+const $=i=>document.getElementById(i),pad=n=>String(n).padStart(2,"0"),iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const fmt=v=>v==null?"":v.toLocaleString("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2});
+const fm=(v,m)=>m=="n"||m=="pos"||m=="rolls"?v.toLocaleString("pl-PL"):fmt(v);
+function parseCSV(t){t=t.replace(/^\uFEFF/,"");const R=[];let r=[],f="",q=false;for(let i=0;i<t.length;i++){const c=t[i];if(q){if(c=='"'){if(t[i+1]=='"'){f+='"';i++}else q=false}else f+=c}else if(c=='"')q=true;else if(c==";"){r.push(f);f=""}else if(c=="\n"){r.push(f);R.push(r);r=[];f=""}else if(c!="\r")f+=c}if(f||r.length){r.push(f);R.push(r)}return R}
+function pdate(s){const m=/(\d+)\s+(\S+)\s+(\d{4})\s+(\d+):(\d+):(\d+)/.exec(s||"");if(!m)return null;const mo=MON[m[2].toLowerCase()]||MON[m[2].toLowerCase().replace("ź","z")];return mo?new Date(+m[3],mo-1,+m[1],+m[4],+m[5],+m[6]):null}
+const wk=d=>{const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const n=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-n);const y=t.getUTCFullYear();return y+"-W"+pad(Math.ceil(((t-Date.UTC(y,0,1))/864e5+1)/7))};
+const baseOf=s=>s.replace(/\s-\s(Kasowy|[A-Za-zćźśóąęł]{2,4}\s\d{4})$/,"");
+function build(rows){
+ const H=rows.shift(),R=rows.filter(r=>r.length>=20).map(r=>({dt:pdate(r[0]),typ:ST(r[1]),ord:ST(r[2]),lnk:ST(r[4]),ins:ST(r[5]),u:NUM(r[6]),bk:NUM(r[14]),hc:NUM(r[20])}));
+ const by={};R.forEach(r=>{(by[r.ord]=by[r.ord]||[]).push(r)});
+ const opn={};
+ function root(id){let rolls=0,seen=new Set();while(id&&id!="-"&&!seen.has(id)){seen.add(id);const g=by[id];if(!g)return null;const ro=g.find(x=>x.typ=="Rolowanie - Otwarcie");if(ro){rolls++;id=ro.lnk;continue}const op=g.filter(x=>isOpen(x.typ));if(op.length){op.sort((a,b)=>a.dt-b.dt);return{id,rolls,op:op[0]}}return null}return null}
+ const ev=[];let miss=0;
+ R.forEach(r=>{let kind=null,start=null,w=0,k=0;
+  if(CLOSE[r.typ]){kind=CLOSE[r.typ];start=r.lnk!="-"?r.lnk:r.ord;w=r.bk}
+  else if(r.typ=="Koszty Utrzymania Pozycji"&&r.ins!="Rachunek"&&r.hc){kind="Koszt utrzymania";start=r.ord;k=r.hc}
+  else if(r.typ=="Dopasowanie Cen"){kind="Dopasowanie cen";k=r.bk}
+  else if(r.typ=="Opłata prowizyjna"){kind="Prowizja";start=r.lnk!="-"?r.lnk:r.ord;k=r.bk}
+  if(!kind||!r.dt)return;
+  const ro=start?root(start):null;if(start&&!ro)miss++;
+  const od=ro?ro.op.dt:null,dir=ro?(/Sprzedaży/.test(ro.op.typ)?"Short":"Long"):start?"nieznany":"—";
+  ev.push({d:r.dt,od,typ:kind,root:ro?ro.id:start?start+" (poza plikiem)":"(bez zlecenia)",base:baseOf(r.ins),contract:r.ins,dir,rolls:ro?ro.rolls:0,units:CLOSE[r.typ]&&kind!="Rolowanie"?r.u:0,wynik:w,koszt:k,net:w+k})});
+ return{ev,miss,total:R.length,unk:[...new Set(R.map(r=>r.typ).filter(t=>t&&!KNOWN.test(t)))]};
+}
+function keyOf(e,dim,basis){const d=basis=="od"?e.od:e.d;
+ switch(dim){case"year":return d?""+d.getFullYear():"brak daty";case"month":return d?d.getFullYear()+"-"+pad(d.getMonth()+1):"brak daty";case"week":return d?wk(d):"brak daty";case"day":return d?iso(d):"brak daty";case"rolls":return""+e.rolls;default:return e[dim]}}
+function load(text){const{ev,miss,total,unk}=build(parseCSV(text));EV=ev;
+ if(!ev.length){alert("Nie znaleziono zdarzeń – sprawdź czy to plik historii z platformy.");return}
+ $("dz").classList.add("hide");$("app").classList.remove("hide");$("re").classList.remove("hide");
+ $("st").textContent=`Wczytano ${total} wierszy → ${ev.length} zdarzeń wyniku/kosztów. `+(miss?`${miss} zdarzeń bez zlecenia pierwotnego w pliku (otwarte przed początkiem historii) – oznaczone „poza plikiem”.`:"")+(unk.length?` Nierozpoznane typy wierszy (pominięte): ${unk.join(", ")}.`:"");
+ const opt=(o,none)=>(none?'<option value="">— brak —</option>':"")+Object.entries(o).map(([k,v])=>`<option value="${k}">${v}</option>`).join("");
+ $("r1").innerHTML=opt(DIMS);$("r2").innerHTML=opt(DIMS,1);$("c1").innerHTML=opt(DIMS,1);$("mv").innerHTML=opt(MEAS);
+ $("r1").value="base";$("r2").value="";$("c1").value="month";$("mv").value="net";
+ SEL={};$("fl").innerHTML="";FILT.forEach(f=>{const vals=[...new Set(EV.map(e=>e[f]))].sort();SEL[f]=new Set(vals);
+  const d=document.createElement("details");d.innerHTML=`<summary></summary><div class="dd"><div class="a"><button data-a="1">Wszystko</button><button data-a="0">Nic</button></div>${vals.map(v=>`<label><input type="checkbox" checked value="${v.replace(/"/g,"&quot;")}">${v}</label>`).join("")}</div>`;
+  const sum=()=>d.querySelector("summary").textContent=DIMS[f]+": "+(SEL[f].size==vals.length?"wszystkie":SEL[f].size);sum();
+  d.addEventListener("change",e=>{const c=e.target;c.checked?SEL[f].add(c.value):SEL[f].delete(c.value);sum();render()});
+  d.addEventListener("click",e=>{if(e.target.dataset.a!=null){const on=e.target.dataset.a=="1";d.querySelectorAll("input").forEach(i=>{i.checked=on;on?SEL[f].add(i.value):SEL[f].delete(i.value)});sum();render()}});
+  $("fl").appendChild(d)});
+ setRange("all");}
+function range(){const b=$("basis").value;const ds=EV.map(e=>b=="od"?e.od:e.d).filter(Boolean);return[new Date(Math.min(...ds)),new Date(Math.max(...ds))]}
+function setRange(p){const[a,z]=range();let f=a;if(p=="ytd")f=new Date(z.getFullYear(),0,1);else if(p=="m")f=new Date(z.getFullYear(),z.getMonth(),1);else if(p!="all")f=new Date(z-(+p-1)*864e5);
+ $("df").value=iso(f<a?a:f);$("dt").value=iso(z);render()}
+function filtered(){const b=$("basis").value,f=$("df").value,t=$("dt").value;
+ return EV.filter(e=>{if(!FILT.every(k=>SEL[k].has(e[k])))return false;const d=b=="od"?e.od:e.d;if(!d)return!(f||t)||false;const s=iso(d);return(!f||s>=f)&&(!t||s<=t)})}
+function agg(list,m){if(m=="pos")return new Set(list.map(e=>e.root)).size;if(m=="n")return list.length;return list.reduce((s,e)=>s+e[m],0)}
+const cls=(v,m)=>m=="n"||m=="pos"||m=="units"?"":v>0?"p":v<0?"n":"mu";
+function render(){if(!EV.length)return;const L=filtered(),b=$("basis").value,m=$("mv").value,r1=$("r1").value,r2=$("r2").value,c1=$("c1").value;LASTV=L;
+ const net=agg(L,"net"),wy=agg(L,"wynik"),ko=agg(L,"koszt");
+ $("kpi").innerHTML=[["Wynik netto",net,1],["Zrealizowany",wy,1],["Koszty i prowizje",ko,1]].map(([a,v])=>`<div><small>${a} (PLN)</small><b class="${cls(v,"net")}">${fmt(v)}</b></div>`).join("")+`<div><small>Pozycji / zdarzeń</small><b>${agg(L,"pos")} / ${L.length}</b></div>`;
+ const rk=e=>[keyOf(e,r1,b),r2?keyOf(e,r2,b):null],ck=e=>c1?keyOf(e,c1,b):"Razem";
+ const cols=[...new Set(L.map(ck))].sort(),tree={};
+ L.forEach(e=>{const[a,s]=rk(e);const n=tree[a]=tree[a]||{l:[],kids:{}};n.l.push(e);if(r2){(n.kids[s]=n.kids[s]||[]).push(e)}});
+ const cell=(l,c)=>l.filter(e=>ck(e)==c);
+ const tot=l=>agg(l,m);let keys=Object.keys(tree).sort();
+ if(SORT){const f=SORT.c=="__t"?(a=>tot(tree[a].l)):(a=>agg(cell(tree[a].l,SORT.c),m));keys.sort((a,z)=>(f(a)-f(z))*SORT.d)}
+ let h=`<thead><tr><th>${DIMS[r1]}${r2?" / "+DIMS[r2]:""}</th>${c1?cols.map(c=>`<th data-c="${c}">${c}</th>`).join(""):""}<th data-c="__t">Razem</th></tr></thead><tbody>`;
+ const td=(l,c,k)=>{const v=agg(l,m);return`<td class="c ${cls(v,m)}" data-k="${k}">${l.length?fm(v,m):""}</td>`};
+ let ci=0;const reg=[];const add=(l,t)=>{reg.push({l,t});return reg.length-1};
+ const row=(label,l,g,ind)=>{let s=`<tr class="${g?"g":""}"><td style="padding-left:${10+ind*16}px">${label}</td>`;
+  if(c1)cols.forEach(c=>{const x=cell(l,c);s+=td(x,c,add(x,label+" · "+c))});s+=td(l,"",add(l,label));return s+"</tr>"};
+ keys.forEach(a=>{const n=tree[a];h+=row(a,n.l,!!r2,0);if(r2)Object.keys(n.kids).sort().forEach(s=>h+=row(s,n.kids[s],false,1))});
+ h+=`<tr class="t"><td>Razem</td>`;if(c1)cols.forEach(c=>{const x=cell(L,c);h+=td(x,c,add(x,"Razem · "+c))});h+=td(L,"",add(L,"Razem"))+"</tr></tbody>";
+ $("pv").innerHTML=h;$("pv").dataset.reg="";window.REG=reg;
+ $("det").classList.add("hide")}
+$("pv").addEventListener("click",e=>{const t=e.target.closest("td.c"),th=e.target.closest("th[data-c]");
+ if(th){const c=th.dataset.c;SORT=SORT&&SORT.c==c?{c,d:-SORT.d}:{c,d:-1};render();return}
+ if(!t||!t.dataset.k)return;const x=window.REG[+t.dataset.k];if(!x.l.length)return;
+ $("dh").textContent=`Szczegóły: ${x.t} (${x.l.length})`;$("det").classList.remove("hide");
+ $("dt2").innerHTML="<thead><tr>"+["Data","Typ","Zlecenie pierwotne","Kontrakt","Kierunek","Otwarcie pozycji","Rolowań","Jedn.","Wynik","Koszty"].map(c=>`<th>${c}</th>`).join("")+"</tr></thead><tbody>"+
+  [...x.l].sort((a,b)=>a.d-b.d).map(e=>`<tr><td>${e.d.toLocaleString("pl-PL")}</td><td>${e.typ}</td><td>${e.root}</td><td>${e.contract}</td><td>${e.dir}</td><td>${e.od?e.od.toLocaleDateString("pl-PL"):"—"}</td><td>${e.rolls}</td><td>${e.units||""}</td><td class="${cls(e.wynik)}">${fmt(e.wynik)}</td><td class="${cls(e.koszt)}">${fmt(e.koszt)}</td></tr>`).join("")+"</tbody>";
+ $("det").scrollIntoView({behavior:"smooth"})});
+["basis","r1","r2","c1","mv","df","dt"].forEach(i=>$(i).addEventListener("change",()=>{if(i=="basis")setRange("all");else{SORT=null;render()}}));
+document.querySelector(".pre").addEventListener("click",e=>{if(e.target.dataset.p)setRange(e.target.dataset.p)});
+$("ex").onclick=()=>{const rows=[...$("pv").rows].map(r=>[...r.cells].map(c=>'"'+c.textContent.replace(/"/g,'""')+'"').join(";")).join("\n");
+ const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+rows],{type:"text/csv"}));a.download="pivot.csv";a.click()};
+$("re").onclick=()=>{$("app").classList.add("hide");$("dz").classList.remove("hide");$("re").classList.add("hide");$("fi").value=""};
+const rd=f=>{if(f)f.text().then(load)};$("fi").onchange=e=>rd(e.target.files[0]);
+const dz=$("dz");["dragover","dragenter"].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add("on")}));
+["dragleave","drop"].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove("on")}));dz.addEventListener("drop",e=>rd(e.dataTransfer.files[0]));
+</script></body></html>
