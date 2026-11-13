@@ -61,7 +61,7 @@ function pdate(s){const m=/(\d+)\s+(\S+)\s+(\d{4})\s+(\d+):(\d+):(\d+)/.exec(s||
 const wk=d=>{const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const n=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-n);const y=t.getUTCFullYear();return y+"-W"+pad(Math.ceil(((t-Date.UTC(y,0,1))/864e5+1)/7))};
 const baseOf=s=>s.replace(/\s-\s(Kasowy|[A-Za-zćźśóąęł]{2,4}\s\d{4})$/,"");
 function build(rows){
- const H=rows.shift(),R=rows.filter(r=>r.length>=20).map(r=>({dt:pdate(r[0]),typ:ST(r[1]),ord:ST(r[2]),lnk:ST(r[4]),ins:ST(r[5]),u:NUM(r[6]),bk:NUM(r[14]),hc:NUM(r[20])}));
+ const H=rows.shift(),R=rows.filter(r=>r.length>=20).map(r=>({dt:pdate(r[0]),typ:ST(r[1]),ord:ST(r[2]),lnk:ST(r[4]),ins:ST(r[5]),u:NUM(r[6]),pr:NUM(r[7]),bk:NUM(r[14]),hc:NUM(r[20])}));
  const by={};R.forEach(r=>{(by[r.ord]=by[r.ord]||[]).push(r)});
  const opn={};
  function root(id){let rolls=0,seen=new Set();while(id&&id!="-"&&!seen.has(id)){seen.add(id);const g=by[id];if(!g)return null;const ro=g.find(x=>x.typ=="Rolowanie - Otwarcie");if(ro){rolls++;id=ro.lnk;continue}const op=g.filter(x=>isOpen(x.typ));if(op.length){op.sort((a,b)=>a.dt-b.dt);return{id,rolls,op:op[0]}}return null}return null}
@@ -74,7 +74,7 @@ function build(rows){
   if(!kind||!r.dt)return;
   const ro=start?root(start):null;if(start&&!ro)miss++;
   const od=ro?ro.op.dt:null,dir=ro?(/Sprzedaży/.test(ro.op.typ)?"Short":"Long"):start?"nieznany":"—";
-  ev.push({d:r.dt,od,typ:kind,root:ro?ro.id:start?start+" (poza plikiem)":"(bez zlecenia)",base:baseOf(r.ins),contract:r.ins,dir,rolls:ro?ro.rolls:0,units:CLOSE[r.typ]&&kind!="Rolowanie"?r.u:0,wynik:w,koszt:k,net:w+k})});
+  ev.push({d:r.dt,od,typ:kind,root:ro?ro.id:start?start+" (poza plikiem)":"(bez zlecenia)",base:baseOf(r.ins),contract:r.ins,dir,rolls:ro?ro.rolls:0,cena:r.pr,units:CLOSE[r.typ]&&kind!="Rolowanie"?r.u:0,wynik:w,koszt:k,net:w+k})});
  return{ev,miss,total:R.length,unk:[...new Set(R.map(r=>r.typ).filter(t=>t&&!KNOWN.test(t)))]};
 }
 function keyOf(e,dim,basis){const d=basis=="od"?e.od:e.d;
@@ -122,8 +122,8 @@ $("pv").addEventListener("click",e=>{const t=e.target.closest("td.c"),th=e.targe
  if(th){const c=th.dataset.c;SORT=SORT&&SORT.c==c?{c,d:-SORT.d}:{c,d:-1};render();return}
  if(!t||!t.dataset.k)return;const x=window.REG[+t.dataset.k];if(!x.l.length)return;
  $("dh").textContent=`Szczegóły: ${x.t} (${x.l.length})`;$("det").classList.remove("hide");
- $("dt2").innerHTML="<thead><tr>"+["Data","Typ","Zlecenie pierwotne","Kontrakt","Kierunek","Otwarcie pozycji","Rolowań","Jedn.","Wynik","Koszty"].map(c=>`<th>${c}</th>`).join("")+"</tr></thead><tbody>"+
-  [...x.l].sort((a,b)=>a.d-b.d).map(e=>`<tr><td>${e.d.toLocaleString("pl-PL")}</td><td>${e.typ}</td><td>${e.root}</td><td>${e.contract}</td><td>${e.dir}</td><td>${e.od?e.od.toLocaleDateString("pl-PL"):"—"}</td><td>${e.rolls}</td><td>${e.units||""}</td><td class="${cls(e.wynik)}">${fmt(e.wynik)}</td><td class="${cls(e.koszt)}">${fmt(e.koszt)}</td></tr>`).join("")+"</tbody>";
+ $("dt2").innerHTML="<thead><tr>"+["Data","Typ","Zlecenie pierwotne","Kontrakt","Kierunek","Otwarcie pozycji","Rolowań","Jedn.","Cena","Wynik","Koszty"].map(c=>`<th>${c}</th>`).join("")+"</tr></thead><tbody>"+
+  [...x.l].sort((a,b)=>a.d-b.d).map(e=>`<tr><td>${e.d.toLocaleString("pl-PL")}</td><td>${e.typ}</td><td>${e.root}</td><td>${e.contract}</td><td>${e.dir}</td><td>${e.od?e.od.toLocaleDateString("pl-PL"):"—"}</td><td>${e.rolls}</td><td>${e.units||""}</td><td>${e.cena?e.cena.toLocaleString("pl-PL",{maximumFractionDigits:6}):""}</td><td class="${cls(e.wynik)}">${fmt(e.wynik)}</td><td class="${cls(e.koszt)}">${fmt(e.koszt)}</td></tr>`).join("")+"</tbody>";
  $("det").scrollIntoView({behavior:"smooth"})});
 ["basis","r1","r2","c1","mv","df","dt"].forEach(i=>$(i).addEventListener("change",()=>{if(i=="basis")setRange("all");else{SORT=null;render()}}));
 document.querySelector(".pre").addEventListener("click",e=>{if(e.target.dataset.p)setRange(e.target.dataset.p)});
