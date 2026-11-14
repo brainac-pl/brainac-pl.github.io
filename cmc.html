@@ -37,7 +37,7 @@ td.c{cursor:pointer}td.c:hover{outline:1px solid var(--ac)}.p{color:var(--up)}.n
 <label>Wiersze<select id="r1"></select></label><label>Podgrupa<select id="r2"></select></label><label>Kolumny<select id="c1"></select></label>
 <label>Wartość<select id="mv"></select></label>
 <div id="fl" style="display:flex;gap:8px;align-items:flex-end"></div>
-<div class="pre"><button id="ex">Eksport pivotu CSV</button></div>
+<div class="pre"><button id="ex">Eksport pivotu CSV</button><button id="sx" title="Yahoo Finance → Historical Data → Download">S&P 500 TR z pliku CSV</button><input type="file" id="sf" class="hide" accept=".csv"></div>
 </div>
 <div class="kpi" id="kpi"></div>
 <div class="wrap"><table id="pv"></table></div>
@@ -52,7 +52,7 @@ const CLOSE={"Zamknięcie Transakcji":"Zamknięcie","Take Profit":"Take Profit",
 const DIMS={base:"Instrument bazowy",contract:"Kontrakt",dir:"Kierunek",typ:"Typ zdarzenia",root:"Zlecenie pierwotne",year:"Rok",month:"Miesiąc",week:"Tydzień",day:"Dzień",rolls:"Liczba rolowań"};
 const MEAS={wynik:"Wynik zrealizowany (PLN)",koszt:"Koszty utrzymania i prowizje (PLN)",net:"Wynik netto (PLN)",n:"Liczba zdarzeń",pos:"Liczba pozycji",units:"Jednostki zamknięte"};
 const FILT=["base","contract","dir","typ"];
-let EV=[],SEL={},SORT=null,LASTV=[];
+let EV=[],SEL={},SORT=null,LASTV=[],LED=[],FL=[],SPX=null,SPXST="ładuję dane…";
 const $=i=>document.getElementById(i),pad=n=>String(n).padStart(2,"0"),iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 const fmt=v=>v==null?"":v.toLocaleString("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fm=(v,m)=>m=="n"||m=="pos"||m=="rolls"?v.toLocaleString("pl-PL"):fmt(v);
@@ -61,7 +61,7 @@ function pdate(s){const m=/(\d+)\s+(\S+)\s+(\d{4})\s+(\d+):(\d+):(\d+)/.exec(s||
 const wk=d=>{const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const n=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-n);const y=t.getUTCFullYear();return y+"-W"+pad(Math.ceil(((t-Date.UTC(y,0,1))/864e5+1)/7))};
 const baseOf=s=>s.replace(/\s-\s(Kasowy|[A-Za-zćźśóąęł]{2,4}\s\d{4})$/,"");
 function build(rows){
- const H=rows.shift(),R=rows.filter(r=>r.length>=20).map(r=>({dt:pdate(r[0]),typ:ST(r[1]),ord:ST(r[2]),lnk:ST(r[4]),ins:ST(r[5]),u:NUM(r[6]),pr:NUM(r[7]),bk:NUM(r[14]),hc:NUM(r[20])}));
+ const H=rows.shift(),R=rows.filter(r=>r.length>=20).map((r,i)=>({i,sd:ST(r[15])&&ST(r[15])!="-"?NUM(r[15]):null,dt:pdate(r[0]),typ:ST(r[1]),ord:ST(r[2]),lnk:ST(r[4]),ins:ST(r[5]),u:NUM(r[6]),pr:NUM(r[7]),bk:NUM(r[14]),hc:NUM(r[20])}));
  const by={};R.forEach(r=>{(by[r.ord]=by[r.ord]||[]).push(r)});
  const opn={};
  function root(id){let rolls=0,seen=new Set();while(id&&id!="-"&&!seen.has(id)){seen.add(id);const g=by[id];if(!g)return null;const ro=g.find(x=>x.typ=="Rolowanie - Otwarcie");if(ro){rolls++;id=ro.lnk;continue}const op=g.filter(x=>isOpen(x.typ));if(op.length){op.sort((a,b)=>a.dt-b.dt);return{id,rolls,op:op[0]}}return null}return null}
@@ -75,11 +75,12 @@ function build(rows){
   const ro=start?root(start):null;if(start&&!ro)miss++;
   const od=ro?ro.op.dt:null,dir=ro?(/Sprzedaży/.test(ro.op.typ)?"Short":"Long"):start?"nieznany":"—";
   ev.push({d:r.dt,od,typ:kind,root:ro?ro.id:start?start+" (poza plikiem)":"(bez zlecenia)",base:baseOf(r.ins),contract:r.ins,dir,rolls:ro?ro.rolls:0,cena:r.pr,units:CLOSE[r.typ]&&kind!="Rolowanie"?r.u:0,wynik:w,koszt:k,net:w+k})});
- return{ev,miss,total:R.length,unk:[...new Set(R.map(r=>r.typ).filter(t=>t&&!KNOWN.test(t)))]};
+ const led=R.filter(r=>r.sd!=null&&r.dt).map(r=>({t:r.dt,i:r.i,s:r.sd})).sort((a,b)=>a.t-b.t||b.i-a.i),fl=R.filter(r=>(r.typ=="Wpłata"||r.typ=="Wypłata")&&r.dt).map(r=>({t:r.dt,a:r.bk}));
+ return{led,fl,ev,miss,total:R.length,unk:[...new Set(R.map(r=>r.typ).filter(t=>t&&!KNOWN.test(t)))]};
 }
 function keyOf(e,dim,basis){const d=basis=="od"?e.od:e.d;
  switch(dim){case"year":return d?""+d.getFullYear():"brak daty";case"month":return d?d.getFullYear()+"-"+pad(d.getMonth()+1):"brak daty";case"week":return d?wk(d):"brak daty";case"day":return d?iso(d):"brak daty";case"rolls":return""+e.rolls;default:return e[dim]}}
-function load(text){const{ev,miss,total,unk}=build(parseCSV(text));EV=ev;
+function load(text){const{ev,miss,total,unk,led,fl}=build(parseCSV(text));EV=ev;LED=led;FL=fl;
  if(!ev.length){alert("Nie znaleziono zdarzeń – sprawdź czy to plik historii z platformy.");return}
  $("dz").classList.add("hide");$("app").classList.remove("hide");$("re").classList.remove("hide");
  $("st").textContent=`Wczytano ${total} wierszy → ${ev.length} zdarzeń wyniku/kosztów. `+(miss?`${miss} zdarzeń bez zlecenia pierwotnego w pliku (otwarte przed początkiem historii) – oznaczone „poza plikiem”.`:"")+(unk.length?` Nierozpoznane typy wierszy (pominięte): ${unk.join(", ")}.`:"");
@@ -100,9 +101,33 @@ function filtered(){const b=$("basis").value,f=$("df").value,t=$("dt").value;
  return EV.filter(e=>{if(!FILT.every(k=>SEL[k].has(e[k])))return false;const d=b=="od"?e.od:e.d;if(!d)return!(f||t)||false;const s=iso(d);return(!f||s>=f)&&(!t||s<=t)})}
 function agg(list,m){if(m=="pos")return new Set(list.map(e=>e.root)).size;if(m=="n")return list.length;return list.reduce((s,e)=>s+e[m],0)}
 const cls=(v,m)=>m=="n"||m=="pos"||m=="units"?"":v>0?"p":v<0?"n":"mu";
+
+const pc=v=>v==null||!isFinite(v)?"n/d":(v*100).toLocaleString("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
+function balAt(T){let s=0;for(const x of LED){if(x.t<=T)s=x.s;else break}return s}
+function perf(f,t){const t0=new Date(f+"T00:00:00"),t1=new Date(t+"T23:59:59"),D=(t1-t0)/864e5,bs=balAt(new Date(t0-1)),be=balAt(t1);
+ const fl=FL.filter(x=>x.t>=t0&&x.t<=t1),F=fl.reduce((s,x)=>s+x.a,0);
+ const cf=[];if(bs)cf.push([0,-bs]);fl.forEach(x=>cf.push([(x.t-t0)/864e5,-x.a]));cf.push([D,be]);
+ const g=x=>cf.reduce((s,[d,a])=>s+a*Math.exp(-x*d/365),0);let lo=-9,hi=12,irr=null;
+ if(D>0&&g(lo)*g(hi)<0){for(let i=0;i<90;i++){const m=(lo+hi)/2;(g(lo)*g(m)<=0)?hi=m:lo=m}irr=Math.exp((lo+hi)/2)-1}
+ const den=bs+fl.reduce((s,x)=>s+x.a*(D-(x.t-t0)/864e5)/D,0);
+ return{bs,be,fl:F,irr,dz:den>0?(be-bs-F)/den:null}}
+function spx(f,t){if(!SPX)return{note:SPXST};let a=null;for(const x of SPX){if(x[0]<f)a=x;else break}if(!a)a=SPX[0];let b=null;for(const x of SPX){if(x[0]<=t)b=x;else break}
+ if(!b||b[0]<=a[0])return{note:"brak danych w tym zakresie"};const days=(new Date(b[0])-new Date(a[0]))/864e5,tot=b[1]/a[1]-1;
+ return{cagr:Math.pow(b[1]/a[1],365.25/days)-1,note:`w okresie ${pc(tot)} · ${a[0]} → ${b[0]}`}}
+function perfHTML(){const f=$("df").value,t=$("dt").value;if(!f||!t||f>t)return"";const p=perf(f,t),s=spx(f,t);
+ return `<div><small>IRR rocznie (XIRR, z sald i wpłat/wypłat)</small><b class="${cls(p.irr)}">${pc(p.irr)}</b><small>zwrot w okresie (Dietz): ${pc(p.dz)}${(new Date(t)-new Date(f))/864e5<30?" · okres &lt;30 dni, anualizacja zawyża":""}</small></div><div><small>Saldo początek → koniec (PLN)</small><b>${fmt(p.bs)} → ${fmt(p.be)}</b><small>wpłaty minus wypłaty: ${fmt(p.fl)}</small></div><div><small>S&P 500 TR – średnio rocznie</small><b>${pc(s.cagr)}</b><small>${s.note}</small></div>`}
+function setSPX(a,src){SPX=a;SPXST=src;try{localStorage.setItem("spx",JSON.stringify(a))}catch(e){}render()}
+async function getSPX(){try{const c=JSON.parse(localStorage.getItem("spx")||"null");if(c&&c.length>100){SPX=c;SPXST="dane z pamięci, odświeżam…"}}catch(e){}
+ const u=`https://query1.finance.yahoo.com/v8/finance/chart/%5ESP500TR?period1=568305000&period2=${Math.floor(Date.now()/1000)}&interval=1d`;
+ for(const x of [u,"https://corsproxy.io/?url="+encodeURIComponent(u),"https://api.allorigins.win/raw?url="+encodeURIComponent(u)]){
+  try{const r=await fetch(x);if(!r.ok)continue;const q=(await r.json()).chart.result[0],a=[];q.timestamp.forEach((s,i)=>{const c=q.indicators.quote[0].close[i];if(c!=null)a.push([new Date(s*1000).toISOString().slice(0,10),c])});
+   if(a.length>100)return setSPX(a,"")}catch(e){}}
+ SPXST=SPX?"nie udało się odświeżyć, dane z pamięci":"brak połączenia – wczytaj CSV z Yahoo (przycisk obok)";render()}
+function spxFile(txt){const R=parseCSV(txt.replace(/,/g,";")),H=R.shift().map(ST),ci=H.indexOf("Close"),a=[];if(ci<0)return alert("Brak kolumny Close w pliku.");
+ R.forEach(r=>{const c=parseFloat(r[ci]);if(/^\d{4}-\d{2}-\d{2}/.test(r[0])&&!isNaN(c))a.push([r[0].slice(0,10),c])});a.sort((x,y)=>x[0]<y[0]?-1:1);a.length>100?setSPX(a,""):alert("Nie rozpoznano danych.")}
 function render(){if(!EV.length)return;const L=filtered(),b=$("basis").value,m=$("mv").value,r1=$("r1").value,r2=$("r2").value,c1=$("c1").value;LASTV=L;
  const net=agg(L,"net"),wy=agg(L,"wynik"),ko=agg(L,"koszt");
- $("kpi").innerHTML=[["Wynik netto",net,1],["Zrealizowany",wy,1],["Koszty i prowizje",ko,1]].map(([a,v])=>`<div><small>${a} (PLN)</small><b class="${cls(v,"net")}">${fmt(v)}</b></div>`).join("")+`<div><small>Pozycji / zdarzeń</small><b>${agg(L,"pos")} / ${L.length}</b></div>`;
+ $("kpi").innerHTML=[["Wynik netto",net,1],["Zrealizowany",wy,1],["Koszty i prowizje",ko,1]].map(([a,v])=>`<div><small>${a} (PLN)</small><b class="${cls(v,"net")}">${fmt(v)}</b></div>`).join("")+`<div><small>Pozycji / zdarzeń</small><b>${agg(L,"pos")} / ${L.length}</b></div>`+perfHTML();
  const rk=e=>[keyOf(e,r1,b),r2?keyOf(e,r2,b):null],ck=e=>c1?keyOf(e,c1,b):"Razem";
  const cols=[...new Set(L.map(ck))].sort(),tree={};
  L.forEach(e=>{const[a,s]=rk(e);const n=tree[a]=tree[a]||{l:[],kids:{}};n.l.push(e);if(r2){(n.kids[s]=n.kids[s]||[]).push(e)}});
@@ -129,8 +154,10 @@ $("pv").addEventListener("click",e=>{const t=e.target.closest("td.c"),th=e.targe
 document.querySelector(".pre").addEventListener("click",e=>{if(e.target.dataset.p)setRange(e.target.dataset.p)});
 $("ex").onclick=()=>{const rows=[...$("pv").rows].map(r=>[...r.cells].map(c=>'"'+c.textContent.replace(/"/g,'""')+'"').join(";")).join("\n");
  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+rows],{type:"text/csv"}));a.download="pivot.csv";a.click()};
+$("sx").onclick=()=>$("sf").click();$("sf").onchange=e=>e.target.files[0]&&e.target.files[0].text().then(spxFile);
 $("re").onclick=()=>{$("app").classList.add("hide");$("dz").classList.remove("hide");$("re").classList.add("hide");$("fi").value=""};
 const rd=f=>{if(f)f.text().then(load)};$("fi").onchange=e=>rd(e.target.files[0]);
 const dz=$("dz");["dragover","dragenter"].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.add("on")}));
 ["dragleave","drop"].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault();dz.classList.remove("on")}));dz.addEventListener("drop",e=>rd(e.dataTransfer.files[0]));
+getSPX();
 </script></body></html>
