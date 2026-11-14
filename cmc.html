@@ -75,7 +75,7 @@ function build(rows){
   const ro=start?root(start):null;if(start&&!ro)miss++;
   const od=ro?ro.op.dt:null,dir=ro?(/Sprzedaży/.test(ro.op.typ)?"Short":"Long"):start?"nieznany":"—";
   ev.push({d:r.dt,od,typ:kind,root:ro?ro.id:start?start+" (poza plikiem)":"(bez zlecenia)",base:baseOf(r.ins),contract:r.ins,dir,rolls:ro?ro.rolls:0,cena:r.pr,units:CLOSE[r.typ]&&kind!="Rolowanie"?r.u:0,wynik:w,koszt:k,net:w+k})});
- const led=R.filter(r=>r.sd!=null&&r.dt).map(r=>({t:r.dt,i:r.i,s:r.sd})).sort((a,b)=>a.t-b.t||b.i-a.i),fl=R.filter(r=>(r.typ=="Wpłata"||r.typ=="Wypłata")&&r.dt).map(r=>({t:r.dt,a:r.bk}));
+ const led=R.filter(r=>r.sd!=null&&r.dt).map(r=>({t:r.dt,i:r.i,s:r.sd,b:r.bk})).sort((a,b)=>a.t-b.t||b.i-a.i),fl=R.filter(r=>(r.typ=="Wpłata"||r.typ=="Wypłata")&&r.dt).map(r=>({t:r.dt,a:r.bk}));
  return{led,fl,ev,miss,total:R.length,unk:[...new Set(R.map(r=>r.typ).filter(t=>t&&!KNOWN.test(t)))]};
 }
 function keyOf(e,dim,basis){const d=basis=="od"?e.od:e.d;
@@ -103,7 +103,7 @@ function agg(list,m){if(m=="pos")return new Set(list.map(e=>e.root)).size;if(m==
 const cls=(v,m)=>m=="n"||m=="pos"||m=="units"?"":v>0?"p":v<0?"n":"mu";
 
 const pc=v=>v==null||!isFinite(v)?"n/d":(v*100).toLocaleString("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
-function balAt(T){let s=0;for(const x of LED){if(x.t<=T)s=x.s;else break}return s}
+function balAt(T){let s=null;for(const x of LED){if(x.t<=T)s=x.s;else break}if(s==null&&LED.length)s=LED[0].s-LED[0].b;return s||0}
 function perf(f,t){const t0=new Date(f+"T00:00:00"),t1=new Date(t+"T23:59:59"),D=(t1-t0)/864e5,bs=balAt(new Date(t0-1)),be=balAt(t1);
  const fl=FL.filter(x=>x.t>=t0&&x.t<=t1),F=fl.reduce((s,x)=>s+x.a,0);
  const cf=[];if(bs)cf.push([0,-bs]);fl.forEach(x=>cf.push([(x.t-t0)/864e5,-x.a]));cf.push([D,be]);
@@ -120,7 +120,8 @@ function setSPX(a,src){SPX=a;SPXST=src;try{localStorage.setItem("spx",JSON.strin
 function parseSPX(txt){const R=parseCSV(txt.replace(/,/g,";")),H=R.shift().map(ST),ci=H.indexOf("Close"),a=[];if(ci<0)return null;
  R.forEach(r=>{const c=parseFloat(r[ci]);if(/^\d{4}-\d{2}-\d{2}/.test(r[0])&&!isNaN(c))a.push([r[0].slice(0,10),c])});a.sort((x,y)=>x[0]<y[0]?-1:1);return a.length>100?a:null}
 async function getSPX(){try{const c=JSON.parse(localStorage.getItem("spx")||"null");if(c&&c.length>100){SPX=c;SPXST="dane z pamięci, odświeżam…"}}catch(e){}
- try{const r=await fetch("data/sp500tr.csv?"+Date.now());if(r.ok){const a=parseSPX(await r.text());if(a)return setSPX(a,"")}}catch(e){}
+ const R="https://raw.githubusercontent.com/brainac-pl/brainac-pl.github.io/";
+ for(const u of ["data/sp500tr.csv?"+Date.now(),R+"main/data/sp500tr.csv",R+"master/data/sp500tr.csv"]){try{const r=await fetch(u);if(r.ok){const a=parseSPX(await r.text());if(a)return setSPX(a,"")}}catch(e){}}
  SPXST=SPX?"nie udało się odświeżyć, dane z pamięci":"brak pliku data/sp500tr.csv (uruchom workflow na GitHubie) – lub wczytaj CSV z Yahoo przyciskiem obok";render()}
 function spxFile(txt){const a=parseSPX(txt);a?setSPX(a,""):alert("Nie rozpoznano danych (potrzebne kolumny Date i Close).")}
 function render(){if(!EV.length)return;const L=filtered(),b=$("basis").value,m=$("mv").value,r1=$("r1").value,r2=$("r2").value,c1=$("c1").value;LASTV=L;
