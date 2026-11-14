@@ -52,7 +52,7 @@ const CLOSE={"Zamknięcie Transakcji":"Zamknięcie","Take Profit":"Take Profit",
 const DIMS={base:"Instrument bazowy",contract:"Kontrakt",dir:"Kierunek",typ:"Typ zdarzenia",root:"Zlecenie pierwotne",year:"Rok",month:"Miesiąc",week:"Tydzień",day:"Dzień",rolls:"Liczba rolowań"};
 const MEAS={wynik:"Wynik zrealizowany (PLN)",koszt:"Koszty utrzymania i prowizje (PLN)",net:"Wynik netto (PLN)",n:"Liczba zdarzeń",pos:"Liczba pozycji",units:"Jednostki zamknięte"};
 const FILT=["base","contract","dir","typ"];
-let EV=[],SEL={},SORT=null,LASTV=[],LED=[],FL=[],SPX=null,SPXST="ładuję dane…";
+let EV=[],SEL={},SORT=null,LASTV=[],LED=[],FL=[],FIRST=null,LAST=null,SPX=null,SPXST="ładuję dane…";
 const $=i=>document.getElementById(i),pad=n=>String(n).padStart(2,"0"),iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
 const fmt=v=>v==null?"":v.toLocaleString("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fm=(v,m)=>m=="n"||m=="pos"||m=="rolls"?v.toLocaleString("pl-PL"):fmt(v);
@@ -76,11 +76,12 @@ function build(rows){
   const od=ro?ro.op.dt:null,dir=ro?(/Sprzedaży/.test(ro.op.typ)?"Short":"Long"):start?"nieznany":"—";
   ev.push({d:r.dt,od,typ:kind,root:ro?ro.id:start?start+" (poza plikiem)":"(bez zlecenia)",base:baseOf(r.ins),contract:r.ins,dir,rolls:ro?ro.rolls:0,cena:r.pr,units:CLOSE[r.typ]&&kind!="Rolowanie"?r.u:0,wynik:w,koszt:k,net:w+k})});
  const led=R.filter(r=>r.sd!=null&&r.dt).map(r=>({t:r.dt,i:r.i,s:r.sd,b:r.bk})).sort((a,b)=>a.t-b.t||b.i-a.i),fl=R.filter(r=>(r.typ=="Wpłata"||r.typ=="Wypłata")&&r.dt).map(r=>({t:r.dt,a:r.bk}));
- return{led,fl,ev,miss,total:R.length,unk:[...new Set(R.map(r=>r.typ).filter(t=>t&&!KNOWN.test(t)))]};
+ const dd=R.filter(r=>r.dt).map(r=>+r.dt),first=new Date(Math.min(...dd)),last=new Date(Math.max(...dd));
+ return{first,last,led,fl,ev,miss,total:R.length,unk:[...new Set(R.map(r=>r.typ).filter(t=>t&&!KNOWN.test(t)))]};
 }
 function keyOf(e,dim,basis){const d=basis=="od"?e.od:e.d;
  switch(dim){case"year":return d?""+d.getFullYear():"brak daty";case"month":return d?d.getFullYear()+"-"+pad(d.getMonth()+1):"brak daty";case"week":return d?wk(d):"brak daty";case"day":return d?iso(d):"brak daty";case"rolls":return""+e.rolls;default:return e[dim]}}
-function load(text){const{ev,miss,total,unk,led,fl}=build(parseCSV(text));EV=ev;LED=led;FL=fl;
+function load(text){const{ev,miss,total,unk,led,fl,first,last}=build(parseCSV(text));EV=ev;LED=led;FL=fl;FIRST=first;LAST=last;
  if(!ev.length){alert("Nie znaleziono zdarzeń – sprawdź czy to plik historii z platformy.");return}
  $("dz").classList.add("hide");$("app").classList.remove("hide");$("re").classList.remove("hide");
  $("st").textContent=`Wczytano ${total} wierszy → ${ev.length} zdarzeń wyniku/kosztów. `+(miss?`${miss} zdarzeń bez zlecenia pierwotnego w pliku (otwarte przed początkiem historii) – oznaczone „poza plikiem”.`:"")+(unk.length?` Nierozpoznane typy wierszy (pominięte): ${unk.join(", ")}.`:"");
@@ -94,7 +95,7 @@ function load(text){const{ev,miss,total,unk,led,fl}=build(parseCSV(text));EV=ev;
   d.addEventListener("click",e=>{if(e.target.dataset.a!=null){const on=e.target.dataset.a=="1";d.querySelectorAll("input").forEach(i=>{i.checked=on;on?SEL[f].add(i.value):SEL[f].delete(i.value)});sum();render()}});
   $("fl").appendChild(d)});
  setRange("all");}
-function range(){const b=$("basis").value;const ds=EV.map(e=>b=="od"?e.od:e.d).filter(Boolean);return[new Date(Math.min(...ds)),new Date(Math.max(...ds))]}
+function range(){const b=$("basis").value;if(b=="d")return[FIRST,LAST];const ds=EV.map(e=>b=="od"?e.od:e.d).filter(Boolean);return[new Date(Math.min(...ds)),new Date(Math.max(...ds))]}
 function setRange(p){const[a,z]=range();let f=a;if(p=="ytd")f=new Date(z.getFullYear(),0,1);else if(p=="m")f=new Date(z.getFullYear(),z.getMonth(),1);else if(p!="all")f=new Date(z-(+p-1)*864e5);
  $("df").value=iso(f<a?a:f);$("dt").value=iso(z);render()}
 function filtered(){const b=$("basis").value,f=$("df").value,t=$("dt").value;
