@@ -117,14 +117,12 @@ function spx(f,t){if(!SPX)return{note:SPXST};let a=null;for(const x of SPX){if(x
 function perfHTML(){const f=$("df").value,t=$("dt").value;if(!f||!t||f>t)return"";const p=perf(f,t),s=spx(f,t);
  return `<div><small>IRR rocznie (XIRR, z sald i wpłat/wypłat)</small><b class="${cls(p.irr)}">${pc(p.irr)}</b><small>zwrot w okresie (Dietz): ${pc(p.dz)}${(new Date(t)-new Date(f))/864e5<30?" · okres &lt;30 dni, anualizacja zawyża":""}</small></div><div><small>Saldo początek → koniec (PLN)</small><b>${fmt(p.bs)} → ${fmt(p.be)}</b><small>wpłaty minus wypłaty: ${fmt(p.fl)}</small></div><div><small>S&P 500 TR – średnio rocznie</small><b>${pc(s.cagr)}</b><small>${s.note}</small></div>`}
 function setSPX(a,src){SPX=a;SPXST=src;try{localStorage.setItem("spx",JSON.stringify(a))}catch(e){}render()}
+function parseSPX(txt){const R=parseCSV(txt.replace(/,/g,";")),H=R.shift().map(ST),ci=H.indexOf("Close"),a=[];if(ci<0)return null;
+ R.forEach(r=>{const c=parseFloat(r[ci]);if(/^\d{4}-\d{2}-\d{2}/.test(r[0])&&!isNaN(c))a.push([r[0].slice(0,10),c])});a.sort((x,y)=>x[0]<y[0]?-1:1);return a.length>100?a:null}
 async function getSPX(){try{const c=JSON.parse(localStorage.getItem("spx")||"null");if(c&&c.length>100){SPX=c;SPXST="dane z pamięci, odświeżam…"}}catch(e){}
- const u=`https://query1.finance.yahoo.com/v8/finance/chart/%5ESP500TR?period1=568305000&period2=${Math.floor(Date.now()/1000)}&interval=1d`;
- for(const x of [u,"https://corsproxy.io/?url="+encodeURIComponent(u),"https://api.allorigins.win/raw?url="+encodeURIComponent(u)]){
-  try{const r=await fetch(x);if(!r.ok)continue;const q=(await r.json()).chart.result[0],a=[];q.timestamp.forEach((s,i)=>{const c=q.indicators.quote[0].close[i];if(c!=null)a.push([new Date(s*1000).toISOString().slice(0,10),c])});
-   if(a.length>100)return setSPX(a,"")}catch(e){}}
- SPXST=SPX?"nie udało się odświeżyć, dane z pamięci":"brak połączenia – wczytaj CSV z Yahoo (przycisk obok)";render()}
-function spxFile(txt){const R=parseCSV(txt.replace(/,/g,";")),H=R.shift().map(ST),ci=H.indexOf("Close"),a=[];if(ci<0)return alert("Brak kolumny Close w pliku.");
- R.forEach(r=>{const c=parseFloat(r[ci]);if(/^\d{4}-\d{2}-\d{2}/.test(r[0])&&!isNaN(c))a.push([r[0].slice(0,10),c])});a.sort((x,y)=>x[0]<y[0]?-1:1);a.length>100?setSPX(a,""):alert("Nie rozpoznano danych.")}
+ try{const r=await fetch("data/sp500tr.csv?"+Date.now());if(r.ok){const a=parseSPX(await r.text());if(a)return setSPX(a,"")}}catch(e){}
+ SPXST=SPX?"nie udało się odświeżyć, dane z pamięci":"brak pliku data/sp500tr.csv (uruchom workflow na GitHubie) – lub wczytaj CSV z Yahoo przyciskiem obok";render()}
+function spxFile(txt){const a=parseSPX(txt);a?setSPX(a,""):alert("Nie rozpoznano danych (potrzebne kolumny Date i Close).")}
 function render(){if(!EV.length)return;const L=filtered(),b=$("basis").value,m=$("mv").value,r1=$("r1").value,r2=$("r2").value,c1=$("c1").value;LASTV=L;
  const net=agg(L,"net"),wy=agg(L,"wynik"),ko=agg(L,"koszt");
  $("kpi").innerHTML=[["Wynik netto",net,1],["Zrealizowany",wy,1],["Koszty i prowizje",ko,1]].map(([a,v])=>`<div><small>${a} (PLN)</small><b class="${cls(v,"net")}">${fmt(v)}</b></div>`).join("")+`<div><small>Pozycji / zdarzeń</small><b>${agg(L,"pos")} / ${L.length}</b></div>`+perfHTML();
